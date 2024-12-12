@@ -1,0 +1,968 @@
+---
+title: "Primer informe - Descriptivo"
+author: "Carlos Santana Flores"
+output:
+  html_document:
+    toc: false
+    toc_depth: 6
+    toc_float: true
+    smooth_scroll: true
+    theme: cerulean
+    highlight: kate
+    df_print: paged
+    code_folding: show
+Lang: "es-ES"
+---
+
+```{r setup, include=FALSE, eval=TRUE}
+options(scipen = 999)
+knitr::opts_chunk$set(echo = TRUE)
+library(xts)
+library(lubridate)
+library(tidyverse)
+library(astsa)
+library(forecast)
+library(foreign)
+library(timsac)
+library(vars)
+library(mFilter)
+library(dynlm)
+library(nlme)
+library(psych)
+library(lmtest)
+library(PerformanceAnalytics)
+library(urca)
+library(car)
+library(FinTS)
+library(stargazer)
+library(readxl)
+library(knitr)
+library(tseries)
+library(DataExplorer)
+library(moments)
+library(strucchange)
+```
+
+```{r modelo_chunk, include=TRUE, echo=FALSE, eval=FALSE, message=FALSE, warning=FALSE, results='markup'}
+## chunk para usar 
+```
+
+# Gasto Público por Estudiante en Educación Básica: Un Estudio Regional en el Perú (2009-2022)
+
+<div style="text-align: justify;">
+
+El presente informe estadístico tiene como objetivo **analizar el gasto anual en educación básica** –que abarca los niveles de inicial, primaria y secundaria– que el gobierno central de la República del Perú ha venido asumiendo a lo largo del período 2009-2022. Este análisis se fundamenta en una base de datos organizada por departamentos del país y se sustenta en información proveniente del Ministerio de Economía y Finanzas (MEF), con el respaldo metodológico y las cifras recopiladas por el Instituto Nacional de Estadística e Informática [INEI - Publicaciones](https://www.inei.gob.pe/estadisticas/indice-tematico/sociales/). De esta manera, se busca ofrecer una visión integral de la evolución del gasto público por estudiante de educación básica, identificando tendencias, brechas y posibles factores que hayan influido en su comportamiento a lo largo del tiempo.
+
+</div>
+
+
+<div style="text-align: center;">
+  <img src="informe_upc.png" alt="T" style="max-width: 500px;">
+</div>
+
+
+<div style="text-align: justify;">
+
+La elección del período 2009-2022 permite evaluar dinámicas de corto y mediano plazo, al tiempo que la desagregación por departamentos posibilita examinar las disparidades regionales existentes. La información obtenida, producto del procesamiento y sistematización de datos oficiales, facilitará no solo la comprensión del panorama actual del financiamiento educativo, sino también la formulación de recomendaciones y lineamientos para la toma de decisiones informadas en el sector. Así, este estudio busca contribuir al debate sobre la inversión en educación, en aras de optimizar el uso de los recursos públicos y promover una enseñanza de mayor calidad en el territorio nacional.
+
+</div>
+
+### Información recopilada
+
+La base de datos se obtuvo del portal de publicaciones de la página web de la INEI el formato presentado es un *data panel* con extensión EXCEL que consta de variables como los departamentos del Perú, nivel educativo y el gasto anual que incurre le gobierno central por el año escolar de un estudiante. A continuación se muestra una parte de la base de datos.
+
+#### Data
+
+```{r lectura_datos, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+library(here)
+library(readxl)
+library(tidyr)
+library(janitor)
+ruta_datos <- here("data","Datos gasto en educación.xlsx")
+datos <- read_excel(ruta_datos) %>% 
+         clean_names()
+head(datos)
+```
+
+
+#### Estructura de los datos y algunas características descriptivas
+
+```{r datos_perdidos, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+library(summarytools)
+print(dfSummary(datos, 
+                varnumbers = FALSE,  # Oculta los números de variable
+                plain.ascii = FALSE, # Permite formato HTML
+                style = "grid",      # Estilo de tabla mejorado
+                valid.col = FALSE,  # Oculta la columna de válidos
+                headings = FALSE),   # Oculta título y subtítulos
+      footnote = NA,                  # Oculta el pie de página
+      method = "render")            # Renderiza como HTML
+
+```
+
+
+### Análisis gráfico de comportamiento temporal del gasto anual de un estudiante por nivel educativo
+
+#### Educación Inicial
+
+```{r inicial, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_inicial <- datos %>%
+  filter(nivel_educativo == "Inicial") %>%       
+  dplyr::select(departamento, x2009, x2010, x2011, x2012, x2013, x2014, x2015, x2016, x2017, x2018, x2019, x2020, x2021, x2022)
+
+# head(datos_inicial)
+```
+
+```{r year_inicial, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_long_inicial <- datos_inicial %>%
+  pivot_longer(
+    cols = starts_with("x"),  # Selecciona las columnas que contienen años
+    names_to = "year",               # Nueva columna con los nombres de las variables originales
+    values_to = "gasto"            # Nueva columna con los valores de las ventas
+  ) %>%
+  mutate(
+    year = as.numeric(gsub("x", "", year))  # Extrae el año y lo convierte en numérico
+  )
+
+# head(datos_long_inicial)
+```
+
+
+```{r serie_tiempo_inicial, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+fig_1_st <- ggplot2::ggplot(datos_long_inicial, aes(x = year, y = gasto, color = departamento)) +
+             geom_line() +  # Dibuja las líneas para cada departamento
+             geom_point() +  # Opcional: agrega puntos en las líneas
+             labs(
+                  title = "Serie de Tiempo del Gasto por Departamento",
+                  x = "Año",
+                  y = "Gasto",
+                  color = "Departamentos"
+                  ) +
+             theme_minimal() +  # Cambia el tema para mejorar la presentación
+             theme(
+                  plot.title = element_text(hjust = 0.5, size = 16),  # Centra y ajusta el tamaño del título
+                  legend.position = "bottom"  # Mueve la leyenda a la parte inferior
+                  )
+print(fig_1_st)
+```
+
+```{r serie_tiempo_inicial_wrap, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+fig_1_st_wrap <- ggplot2::ggplot(datos_long_inicial, aes(x = year, y = gasto)) +
+  geom_line(color ="blue", size= 1) +
+  geom_point(color ="blue", size= 1) +
+  labs(
+    title = "Serie de Tiempo del Gasto por Departamento",
+    x = "Año",
+    y = "Gasto"
+      ) +
+  facet_wrap(~ departamento) +  # Crea un gráfico por cada departamento
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16)
+       )
+
+print(fig_1_st_wrap)
+```
+
+#### Educación Primaria
+
+```{r primaria, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_primaria <- datos %>%
+  filter(nivel_educativo == "Primaria") %>%       
+  dplyr::select(departamento, x2009, x2010, x2011, x2012, x2013, x2014, x2015, x2016, x2017, x2018, x2019, x2020, x2021, x2022)
+
+# head(datos_primaria)
+```
+
+
+```{r year_primaria, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_long_primaria <- datos_primaria %>%
+  pivot_longer(
+    cols = starts_with("x"),  # Selecciona las columnas que contienen años
+    names_to = "year",               # Nueva columna con los nombres de las variables originales
+    values_to = "gasto"            # Nueva columna con los valores de las ventas
+  ) %>%
+  mutate(
+    year = as.numeric(gsub("x", "", year))  # Extrae el año y lo convierte en numérico
+  )
+
+# head(datos_long_primaria)
+```
+
+```{r serie_tiempo_primaria, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+fig_2_st <- ggplot2::ggplot(datos_long_primaria, aes(x = year, y = gasto, color = departamento)) +
+             geom_line() +  # Dibuja las líneas para cada departamento
+             geom_point() +  # Opcional: agrega puntos en las líneas
+             labs(
+                  title = "Serie de Tiempo del Gasto por Departamento",
+                  x = "Año",
+                  y = "Gasto",
+                  color = "Departamentos"
+                  ) +
+             theme_minimal() +  # Cambia el tema para mejorar la presentación
+             theme(
+                  plot.title = element_text(hjust = 0.5, size = 16),  # Centra y ajusta el tamaño del título
+                  legend.position = "bottom"  # Mueve la leyenda a la parte inferior
+                  )
+print(fig_2_st)
+```
+
+```{r serie_tiempo_primaria_wrap, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+fig_2_st_wrap <- ggplot2::ggplot(datos_long_primaria, aes(x = year, y = gasto)) +
+  geom_line(color ="blue", size= 1) +
+  geom_point(color ="blue", size= 1) +
+  labs(
+    title = "Serie de Tiempo del Gasto por Departamento",
+    x = "Año",
+    y = "Gasto"
+      ) +
+  facet_wrap(~ departamento) +  # Crea un gráfico por cada departamento
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16)
+       )
+
+print(fig_2_st_wrap)
+```
+
+#### Educación Secundaria
+
+```{r secundaria, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_secundaria <- datos %>%
+  filter(nivel_educativo == "Secundaria") %>%       
+  dplyr::select(departamento, x2009, x2010, x2011, x2012, x2013, x2014, x2015, x2016, x2017, x2018, x2019, x2020, x2021, x2022)
+
+# head(datos_secundaria)
+```
+
+
+```{r year_secundaria, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_long_secundaria <- datos_secundaria %>%
+  pivot_longer(
+    cols = starts_with("x"),  # Selecciona las columnas que contienen años
+    names_to = "year",               # Nueva columna con los nombres de las variables originales
+    values_to = "gasto"            # Nueva columna con los valores de las ventas
+  ) %>%
+  mutate(
+    year = as.numeric(gsub("x", "", year))  # Extrae el año y lo convierte en numérico
+  )
+
+# head(datos_long_secundaria)
+```
+
+```{r serie_tiempo_secundaria, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+fig_3_st <- ggplot2::ggplot(datos_long_secundaria, aes(x = year, y = gasto, color = departamento)) +
+             geom_line() +  # Dibuja las líneas para cada departamento
+             geom_point() +  # Opcional: agrega puntos en las líneas
+             labs(
+                  title = "Serie de Tiempo del Gasto por Departamento",
+                  x = "Año",
+                  y = "Gasto",
+                  color = "Departamentos"
+                  ) +
+             theme_minimal() +  # Cambia el tema para mejorar la presentación
+             theme(
+                  plot.title = element_text(hjust = 0.5, size = 16),  # Centra y ajusta el tamaño del título
+                  legend.position = "bottom"  # Mueve la leyenda a la parte inferior
+                  )
+print(fig_3_st)
+```
+
+```{r serie_tiempo_secundaria_wrap, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+fig_3_st_wrap <- ggplot2::ggplot(datos_long_secundaria, aes(x = year, y = gasto)) +
+  geom_line(color ="blue", size= 1) +
+  geom_point(color ="blue", size= 1) +
+  labs(
+    title = "Serie de Tiempo del Gasto por Departamento",
+    x = "Año",
+    y = "Gasto"
+      ) +
+  facet_wrap(~ departamento) +  # Crea un gráfico por cada departamento
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16)
+       )
+
+print(fig_3_st_wrap)
+```
+
+
+### Gasto anual de un estudiante de educación básica en el 2022
+
+#### Medidas descriptivas
+
+```{r inicia_2022, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_long_inicial_2022 <- datos_long_inicial %>%
+  filter(year == "2022") %>%       
+  dplyr::select(departamento, gasto)
+
+# head(datos_long_inicial_2022)
+```
+
+```{r primaria_2022, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_long_primaria_2022 <- datos_long_primaria %>%
+  filter(year == "2022") %>%       
+  dplyr::select(departamento, gasto)
+
+# head(datos_long_primaria_2022)
+```
+
+```{r secundaria_2022, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_long_secundaria_2022 <- datos_long_secundaria %>%
+  filter(year == "2022") %>%       
+  dplyr::select(departamento, gasto)
+
+# head(datos_long_secundaria_2022)
+```
+
+```{r gasto_nivel_educ_2022, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+gasto_nivel_educ_2022 <- merge(merge(datos_long_inicial_2022, datos_long_primaria_2022, by = "departamento"), datos_long_secundaria_2022, by = "departamento")
+
+gasto_nivel_educ_2022_descrip <- gasto_nivel_educ_2022 %>% 
+                         rename(`Gasto Inicial`=gasto.x, `Gasto Primaria`=gasto.y, `Gasto Secundaria`=gasto)
+
+# head(gasto_nivel_educ_2022)
+
+# -----------  Filtrando variables cuantis ---------
+
+datos_descriptiva_gasto_2022 <- gasto_nivel_educ_2022_descrip %>% 
+                                dplyr::select(`Gasto Inicial`, `Gasto Primaria`, `Gasto Secundaria`)
+# head(datos_descriptiva_gasto_2022)
+
+resul_descriptivo <- describe(datos_descriptiva_gasto_2022)
+
+resul_descriptivo_2dec <- round(resul_descriptivo,2)
+
+# print(resul_descriptivo_2dec)
+
+knitr::kable(
+             resul_descriptivo_2dec,
+             format = "html",     # Cambia a "latex" para PDF
+            ) %>% 
+       kableExtra::column_spec(1, width = "4cm") %>%  
+       kableExtra::column_spec(2, width = "2cm") %>%  
+       kableExtra::column_spec(3, width = "2cm") %>%  
+       kableExtra::column_spec(4, width = "2cm") %>% 
+       kableExtra::column_spec(5, width = "2cm") %>%  
+       kableExtra::column_spec(6, width = "2cm") %>%  
+       kableExtra::column_spec(7, width = "2cm") %>%  
+       kableExtra::column_spec(8, width = "2cm") %>% 
+       kableExtra::column_spec(9, width = "2cm") %>%  
+       kableExtra::column_spec(10, width = "2cm") %>%  
+       kableExtra::column_spec(11, width = "2cm") %>%  
+       kableExtra::column_spec(12, width = "2cm") %>% 
+       kableExtra::column_spec(13, width = "2cm") %>%  
+       kableExtra::column_spec(14, width = "2cm")
+```
+
+
+```{r gasto_nivel_educ_long_2022, include=TRUE, echo=FALSE, eval=FALSE, message=FALSE, warning=FALSE, results='markup'}
+
+gasto_nivel_educ_long_2022 <- gasto_nivel_educ_2022 %>% 
+                              pivot_longer(cols = c(gasto_inicial, gasto_primaria, gasto_secundaria),
+                                           names_to = "nivel_educativo",
+                                           values_to = "gasto")
+# head(gasto_nivel_educ_long_2022)
+```
+
+#### Gráficos
+
+```{r datos_2022, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_2022 <- datos %>% 
+  dplyr::select(departamento,nivel_educativo,x2022) %>% 
+  dplyr::rename(
+    Departamento = departamento,
+    `Nivel Educativo` = nivel_educativo,
+    `2022` = x2022
+  )
+
+# head(datos_2022)
+
+```
+
+```{r graf_datos_2022, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+box_1 <- ggplot(datos_2022, aes( x= `Nivel Educativo`, y=`2022`, fill=`Nivel Educativo`)) +
+  geom_boxplot() +
+  labs(title = "Gasto anual por estudiante", x= "Nivel educativo", y="Gasto en soles") +
+  theme_gray() +
+  theme(legend.position = "none")
+
+jitter_1 <- ggplot(datos_2022, aes( x= `Nivel Educativo`, y=`2022`, color=`Nivel Educativo`)) +
+  geom_jitter(width= 0.1, size= 2) +
+  geom_text(aes(label = Departamento), hjus= -0.2, size=3) +
+  labs(title = "Gasto anual por estudiante", x= "Nivel educativo", y="Gasto en soles") +
+  theme_gray() +
+  theme(legend.position = "none")
+
+library(ggpubr)
+
+figura_1 <- ggpubr::ggarrange(box_1, jitter_1, ncol = 2, labels = c("a", "b"))
+
+print(figura_1)
+
+```
+
+### Gasto anual por alumno en educación inicial para el 2022
+
+```{r datos_2022_inicial, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+datos_2022_inicial <- datos_2022 %>% 
+                 filter(`Nivel Educativo` == "Inicial")
+
+# head(datos_2022_inicial)
+  
+```
+
+#### Cálculos previos
+
+```{r cal_prev, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+options(scipen = 999)
+minimo <- min(datos_2022_inicial$`2022`)
+maximo <- max(datos_2022_inicial$`2022`)
+rango <- maximo - minimo
+n_datos <- nrow(datos_2022_inicial)
+n_intervalo <- round( 1 + 3.322*log(n_datos, 10) , 0 )
+
+ancho_inter_pre <- rango/n_intervalo
+decimales <- 0
+
+factor_d <- 10^decimales
+
+ancho_inter <- ceiling(ancho_inter_pre*factor_d)/factor_d
+
+# Forzar formato sin notación científica
+minimo <- as.numeric(format(minimo, scientific = FALSE))
+maximo <- as.numeric(format(maximo, scientific = FALSE))
+ancho_inter <- as.numeric(format(ancho_inter, scientific = FALSE))
+
+cal_prev <- data.frame(
+                       Calculo_previo = c("Máximo","Mínimo","Rango","N_intervalos","Ancho sin redondeo", "Ancho Intervalo"),
+                       Valor = c(maximo, minimo, rango, n_intervalo, ancho_inter_pre, ancho_inter) 
+                      )
+# ----------------------------
+
+knitr::kable(
+             cal_prev,
+             format = "html",     # Cambia a "latex" para PDF
+             col.names = c("Cálculos Previos", "Valor")
+            ) %>% 
+  
+  kableExtra::column_spec(1, width = "5cm") %>%  # Ajustar ancho de la primera columna
+  kableExtra::column_spec(2, width = "4cm")     # Ajustar ancho de la segunda columna
+
+cat("<br>")  # hace salto en linea (2 veces) Se necesita en el chunk: results='asis'
+
+```
+
+#### Distribución de departamentos según el gasto incurrido en la educación inicial
+
+```{r t_d_f, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+options(scipen = 999)
+limites <- seq(minimo, maximo + ancho_inter, by = ancho_inter)
+
+etiquetas <- sprintf("(%.0f, %.0f]", limites[-length(limites)], limites[-1]) #mostrará CERO decimales
+
+datos_2022_inicial$intervalo <- cut( datos_2022_inicial$`2022`,
+                                     breaks = limites,
+                                     include.lowest = TRUE,
+                                     right = TRUE,
+                                     labels = etiquetas
+                                    )
+
+t_d_f <- as.data.frame(table(datos_2022_inicial$intervalo))
+
+colnames(t_d_f) <- c("Gasto", "fi")
+
+# Total de observaciones
+total <- sum(t_d_f$fi)
+
+# Calcular la frecuencia porcentual
+t_d_f$`pi (%)` <- round( (t_d_f$fi / total) * 100, 1 )
+
+# Calcular la frecuencia absoluta acumulada
+t_d_f$Fi <- cumsum(t_d_f$fi)
+
+# Calcular la frecuencia porcentual acumulada
+t_d_f$`Pi (%)` <- cumsum(t_d_f$`pi (%)`)
+
+# ---------------------------------
+
+knitr::kable(
+             t_d_f,
+             format = "html",     # Cambia a "latex" para PDF
+             col.names = c("Gasto", "fi", "pi(%)", "Fi", "Pi(%)")
+            ) %>% 
+  
+  kableExtra::column_spec(1, width = "3cm") %>%  # Ajustar ancho de la primera columna
+  kableExtra::column_spec(2, width = "3cm") %>% # Ajustar ancho de la segunda columna
+  kableExtra::column_spec(3, width = "3cm") %>%
+  kableExtra::column_spec(4, width = "3cm") %>% 
+  kableExtra::column_spec(5, width = "3cm") 
+```
+
+#### Histograma
+
+```{r histograma, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+ggplot(data = t_d_f, aes(x = Gasto, y = fi)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black", width = 0.98) + # width ajusta espacio entre barras
+  geom_text(aes(label = fi), vjust = -0.5) +  # Agregar etiquetas de frecuencia
+  labs(
+        title = "Distribución de departamentos según gasto anual en educaión inicial",
+        x = "Gasto anual (en soles)",
+        y = "Número de departamentos"
+      ) +
+  theme_gray()
+
+```
+
+### Probabilidades con eventos
+
+#### Eventos
+
+* I: Inicial
+
+
+* P: Primaria
+ 
+ 
+* S: Secundaria
+
+
+* M: Masculino
+
+
+* F: Femenino
+
+
+#### A partir de una tabla de doble entrada 
+
+```{r tabla_doble_entrada, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+# Crear el vector con las frecuencias absolutas
+frecuencias <- c(12, 14, 15, 16, 17, 22)
+
+# Crear la tabla de doble entrada como una matriz
+tabla <- matrix(
+  data = frecuencias,
+  nrow = 3,
+  ncol = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "Nivel Educativo" = c("Inicial", "Primaria", "Secundaria"),
+    "Sexo" = c("Masculino", "Femenino")
+  )
+)
+#print(tabla)
+
+# Calcular totales por filas y columnas
+totales_filas <- rowSums(tabla)  # Totales por nivel educativo
+totales_columnas <- colSums(tabla)  # Totales por sexo
+
+# Agregar totales como una nueva fila y columna
+tabla_con_totales <- rbind(tabla, "Total" = totales_columnas)  # Agregar fila de totales
+tabla_con_totales <- cbind(tabla_con_totales, "Total" = c(totales_filas, sum(totales_filas)))  # Agregar columna de totales
+
+# Mostrar la tabla con totales
+#print(tabla_con_totales)
+
+knitr::kable(
+             tabla_con_totales,
+             caption = "Distribución de estudiantes de educación inicial según nivel educativo y sexo"
+            ) %>% 
+  kableExtra::column_spec(1, width = "2cm") %>%  # Ajustar ancho de la primera columna
+  kableExtra::column_spec(2, width = "2cm") %>% # Ajustar ancho de la segunda columna
+  kableExtra::column_spec(3, width = "2cm") %>% 
+  kableExtra::column_spec(4, width = "2cm") 
+
+# GRÁFICO DE BARRAS
+# -----------------
+
+# Convertir la tabla de porcentajes por columna a un data frame
+tabla_df <- as.data.frame(as.table(tabla))
+
+# Cambiar los nombres de las columnas para mayor claridad
+colnames(tabla_df) <- c("Nivel Educativo", "Sexo", "Porcentaje")
+
+# Filtrar para excluir la columna "Total"
+#tabla_por_fila_df <- tabla_por_fila_df[tabla_por_fila_df$Sexo != "Total", ]
+
+cat("<br>")  # hace salto en linea (2 veces) Se necesita en el chunk: results='asis'
+
+#### Crear el gráfico de barras
+
+ggplot(tabla_df, aes(x = `Nivel Educativo`, y = Porcentaje, fill = Sexo)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Barras lado a lado
+  geom_text(aes(label = round(Porcentaje, 1)),      # Etiquetas de valores porcentuales
+            position = position_dodge(width = 0.9), # Ajustar posición para barras lado a lado
+            vjust = -0.5) +                        # Colocar etiquetas sobre las barras
+  labs(
+       title = "Distribución de estudiantes de educación inicial según nivel educativo y sexo",
+       x = "Nivel educativo",
+       y = "Número de estudiantes"
+      ) +
+  theme_minimal() +  # Tema limpio
+  scale_fill_brewer(palette = "Blues")  # Paleta de colores amigables
+
+```
+
+Si se selecciona a un estudiante al azar, cuál es la probabilidad de que sea de educación inicial y de sexo femenino
+$$ P(I n F) = 14 / 96 = 0.146 $$ 
+
+#### A partir de una tabla de doble entrada en valores porcentuales
+
+```{r tabla_doble_entrada_porcentaje, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+# Crear el vector con las frecuencias absolutas
+frecuencias <- c(12, 14, 15, 16, 17, 22)
+
+# Crear la tabla de doble entrada como una matriz
+tabla <- matrix(
+  data = frecuencias,
+  nrow = 3,
+  ncol = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "Nivel Educativo" = c("Inicial", "Primaria", "Secundaria"),
+    "Sexo" = c("Masculino", "Femenino")
+  )
+)
+
+# Calcular totales por filas y columnas
+totales_filas <- rowSums(tabla)  # Totales por nivel educativo
+totales_columnas <- colSums(tabla)  # Totales por sexo
+
+# Agregar totales como una nueva fila y columna
+tabla_con_totales <- rbind(tabla, "Total" = totales_columnas)  # Agregar fila de totales
+tabla_con_totales <- cbind(tabla_con_totales, "Total" = c(totales_filas, sum(totales_filas)))  # Agregar columna de totales
+
+# Mostrar la tabla con totales
+# print(tabla_con_totales)
+
+
+# Calcular los porcentajes
+total_general <- sum(tabla)  # Total general de la tabla
+tabla_porcentajes <- round((tabla / total_general) * 100, 1)  # Convertir a porcentajes
+tabla_porcentajes <- rbind(tabla_porcentajes, "Total" = colSums(tabla_porcentajes))  # Totales por columnas
+tabla_porcentajes <- cbind(tabla_porcentajes, "Total" = rowSums(tabla_porcentajes))  # Totales por filas
+
+
+# Mostrar la tabla de porcentajes
+# print(tabla_porcentajes)
+
+knitr::kable(
+             tabla_porcentajes,
+             caption = "Distribución porcentual de estudiantes de educación inicial según nivel educativo y sexo"
+            ) %>% 
+  kableExtra::column_spec(1, width = "2cm") %>%  # Ajustar ancho de la primera columna
+  kableExtra::column_spec(2, width = "2cm") %>% # Ajustar ancho de la segunda columna
+  kableExtra::column_spec(3, width = "2cm") %>% 
+  kableExtra::column_spec(4, width = "2cm") 
+
+
+
+# GRÁFICO DE BARRAS
+# -----------------
+
+tabla_porcentajes_sin_total <- round((tabla / total_general) * 100, 1)  # Convertir a porcentajes
+
+# Convertir la tabla de porcentajes por columna a un data frame
+tabla_porcentajes_sin_total_df <- as.data.frame(as.table(tabla_porcentajes_sin_total))
+
+# Cambiar los nombres de las columnas para mayor claridad
+colnames(tabla_porcentajes_sin_total_df) <- c("Nivel Educativo", "Sexo", "Porcentaje")
+
+# Filtrar para excluir la columna "Total"
+#tabla_por_fila_df <- tabla_por_fila_df[tabla_por_fila_df$Sexo != "Total", ]
+
+cat("<br>")  # hace salto en linea (2 veces) Se necesita en el chunk: results='asis'
+
+#### Crear el gráfico de barras
+
+ggplot(tabla_porcentajes_sin_total_df, aes(x = `Nivel Educativo`, y = Porcentaje, fill = Sexo)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Barras lado a lado
+  geom_text(aes(label = round(Porcentaje, 1)),      # Etiquetas de valores porcentuales
+            position = position_dodge(width = 0.9), # Ajustar posición para barras lado a lado
+            vjust = -0.5) +                        # Colocar etiquetas sobre las barras
+  labs(
+       title = "Distribución Porcentual por Nivel Educativo y Sexo",
+       x = "Nivel educativo",
+       y = "Porcentaje"
+      ) +
+  theme_minimal() +  # Tema limpio
+  scale_fill_brewer(palette = "Blues")  # Paleta de colores amigables
+
+```
+
+Si se selecciona a un estudiante al azar, cuál es la probabilidad de que sea de educación inicial y de sexo femenino
+$$ P(I n F) = 0.146 $$ 
+
+
+#### A partir de una tabla de doble entrada respecto a las filas
+
+```{r tabla_doble_entrada_filas, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+# Crear el vector con las frecuencias absolutas
+frecuencias <- c(12, 14, 15, 16, 17, 22)
+
+# Crear la tabla de doble entrada como una matriz
+tabla <- matrix(
+  data = frecuencias,
+  nrow = 3,
+  ncol = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "Nivel Educativo" = c("Inicial", "Primaria", "Secundaria"),
+    "Sexo" = c("Masculino", "Femenino")
+  )
+)
+
+
+# Calcular totales por filas y columnas
+totales_filas <- rowSums(tabla)  # Totales por nivel educativo
+totales_columnas <- colSums(tabla)  # Totales por sexo
+
+# Agregar totales como una nueva fila y columna
+tabla_con_totales <- rbind(tabla, "Total" = totales_columnas)  # Agregar fila de totales
+tabla_con_totales <- cbind(tabla_con_totales, "Total" = c(totales_filas, sum(totales_filas)))  # Agregar columna de totales
+
+
+# Calcular los porcentajes respecto al total de fila
+tabla_por_fila <- round((tabla / totales_filas) * 100, 1)
+
+# Agregar los totales (por fila siempre es 100%)
+tabla_por_fila <- cbind(tabla_por_fila, "Total" = rowSums(tabla_por_fila))
+
+
+# Mostrar la tabla de porcentajes por fila
+# print(tabla_por_fila)
+
+knitr::kable(
+             tabla_por_fila,
+             caption = "Distribución porcentual de estudiantes de educación inicial según sexo por nivel educativo"
+            ) %>% 
+  kableExtra::column_spec(1, width = "2cm") %>%  # Ajustar ancho de la primera columna
+  kableExtra::column_spec(2, width = "2cm") %>% # Ajustar ancho de la segunda columna
+  kableExtra::column_spec(3, width = "2cm") %>% 
+  kableExtra::column_spec(4, width = "2cm") 
+
+# GRÁFICO DE BARRAS
+# -----------------
+
+# Convertir la tabla de porcentajes por columna a un data frame
+tabla_por_fila_df <- as.data.frame(as.table(tabla_por_fila))
+
+# Cambiar los nombres de las columnas para mayor claridad
+colnames(tabla_por_fila_df) <- c("Nivel Educativo", "Sexo", "Porcentaje")
+
+# Filtrar para excluir la columna "Total"
+tabla_por_fila_df <- tabla_por_fila_df[tabla_por_fila_df$Sexo != "Total", ]
+
+
+cat("<br>")  # hace salto en linea (2 veces) Se necesita en el chunk: results='asis'
+
+#____gráfico de barras
+
+ggplot(tabla_por_fila_df, aes(x = `Nivel Educativo`, y = Porcentaje, fill = Sexo)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Barras lado a lado
+  geom_text(aes(label = round(Porcentaje, 1)),      # Etiquetas de valores porcentuales
+            position = position_dodge(width = 0.9), # Ajustar posición para barras lado a lado
+            vjust = -0.5) +                        # Colocar etiquetas sobre las barras
+  ggtitle("Distribución porcentual de estudiantes de educación inicial según \nsexo por nivel educativo") +
+  theme(plot.margin = margin(10, 10, 50, 10)) +
+  labs(x = "Nivel educativo",
+       y = "Porcentaje"
+      ) +
+  theme_minimal() +  # Tema limpio
+  scale_fill_brewer(palette = "Blues")  # Paleta de colores amigables
+
+```
+
+Si se selecciona a un estudiante al azar de educación inicial, cuál es la probabilidad de que sea del sexo femenino
+$$ P(F / I) = 0.538 $$ 
+
+#### A partir de una tabla de doble entrada respecto a las columnas
+
+```{r tabla_doble_entrada_columnas, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='asis'}
+ # hace salto en linea (2 veces) Se necesita en el chunk: results='asis'
+
+# Crear el vector con las frecuencias absolutas
+frecuencias <- c(12, 14, 15, 16, 17, 22)
+
+# Crear la tabla de doble entrada como una matriz
+tabla <- matrix(
+  data = frecuencias,
+  nrow = 3,
+  ncol = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "Nivel Educativo" = c("Inicial", "Primaria", "Secundaria"),
+    "Sexo" = c("Masculino", "Femenino")
+  )
+)
+
+# Calcular los totales por columna
+totales_columnas <- colSums(tabla)
+
+# Calcular los porcentajes respecto al total de columna
+tabla_por_columna <- sweep(tabla, 2, totales_columnas, FUN = "/") * 100
+
+# Redondear los valores al final
+tabla_por_columna <- round(tabla_por_columna, 1)
+
+# Agregar una fila para los totales (porcentaje por columna siempre suma 100)
+tabla_por_columna <- rbind(tabla_por_columna, "Total" = colSums(tabla_por_columna))
+
+# Mostrar la tabla de porcentajes por columna
+# print(tabla_por_columna)
+
+knitr::kable(
+             tabla_por_columna,
+             caption = "Distribución porcentual de estudiantes de educación inicial según nivel educativo por sexo"
+            ) %>% 
+  kableExtra::column_spec(1, width = "4cm") %>%  # Ajustar ancho de la primera columna
+  kableExtra::column_spec(2, width = "4cm") %>% # Ajustar ancho de la segunda columna
+  kableExtra::column_spec(3, width = "4cm")
+
+cat("<br>")  # hace salto en linea (2 veces) Se necesita en el chunk: results='asis'
+
+# GRÁFICO DE BARRAS
+# -----------------
+
+# Convertir la tabla de porcentajes por columna a un data frame
+tabla_por_columna_df <- as.data.frame(as.table(tabla_por_columna))
+
+# Cambiar los nombres de las columnas para mayor claridad
+colnames(tabla_por_columna_df) <- c("Nivel Educativo", "Sexo", "Porcentaje")
+
+# Filtrar para excluir la fila "Total"
+tabla_por_columna_df <- tabla_por_columna_df[tabla_por_columna_df$`Nivel Educativo` != "Total", ]
+
+#### Crear el gráfico de barras
+
+ggplot(tabla_por_columna_df, aes(x = Sexo, y = Porcentaje, fill = `Nivel Educativo`)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Barras lado a lado
+  geom_text(aes(label = round(Porcentaje, 1)),      # Etiquetas de valores porcentuales
+            position = position_dodge(width = 0.9), # Ajustar posición para barras lado a lado
+            vjust = -0.5) +                        # Colocar etiquetas sobre las barras
+  ggtitle("Distribución porcentual de estudiantes de educación inicial según \nnivel educativo por sexo") +
+  theme(plot.margin = margin(10, 10, 50, 10)) +
+  labs(x = "Sexo",
+       y = "Porcentaje"
+      ) +
+  theme_minimal() +  # Tema limpio
+  scale_fill_brewer(palette = "Blues")  # Paleta de colores amigables
+
+```
+
+Si se selecciona a un estudiante al azar del sexo femenino, cuál es la probabilidad de que sea de educación inicial
+$$ P(I / F) = 0.269 $$ 
+
+### Probabilidad para variable aleatoria
+
+#### Caso 1 - Distribución normal
+El gasto anual en un alumno de educación secundaria que incurre el estado tiene una distribución normal cou una media de 3500 soles y un desviación estándar de 58 soles. Si se selecciona a un alumno al azar cuál la probabilidad de que el gasto anual sea mayor a 3525 soles.
+
+```{r dist_normal, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+1 - pnorm(3525, 3500, 58)
+
+```
+
+
+#### Caso 2 - Distribución binomial
+Se sabe que el departamento de Moquegua es el que invierte más en sus estudiantes de educación escolar y que la probabilidad de que un estudiante desapruebe el año escolar es del 5%. Si se selecciona una muestra de 30 alumnos, cuál es la probabilidad que a lo más hayan desaprobado 2 estudiantes.
+
+```{r dist_binomial, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+pbinom(2,30,0.05)
+
+```
+
+
+#### Caso 3 - Distribución de Poisson
+En el departamento de Ucayali la cantidad de estudiantes ausentes en un día de clase en una unidad educativa sigue un proceso de Poisson. Si se sabe que la cantidad promedio de estudiantes ausentes en un día de clase es de cuatro estudiantes. Cuál es la probabilidad de que en un dia de clase falten más de cinco estudiantes en un dia de clase.
+
+```{r dist_poisson, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+1 - ppois(5,4)
+
+```
+### Tamaño de muestra
+
+Se desea estimar el tiempo promedio de traslado de casa al colegio de estudiantes de Áncash con un margen de error de 3 minutos y un nivel de confianza del 96%. Cuál debe ser el tamaño de muestra a tomar en cuenta para realizar la estimación. A partir de una muestra piloto se obtuvieron los siguientes resultados: / 20 / 17 / 28 / 22 / 25 / 29 / 27 / 21 /
+
+```{r tamaño_muestra, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+n_c <- 0.97
+m_error <- 1.5
+piloto <- c(20, 17, 28, 22, 25, 29, 27, 21)
+
+tam_muest = (  qnorm(1-((1-n_c)/2))*sd(piloto) / m_error )^2
+
+print( ceiling(tam_muest) )
+```
+
+### Intervalo de confianza para la media
+
+Se desea estimar el tiempo promedio de traslado de casa al colegio de estudiantes de Áncash a un nivel de confianza del 96%. Si el tiempo promedio de traslado de casa al colegio supera los 30 minutos se optará por darle una bicicleta a cada estudiante.
+
+
+```{r I_C_media, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+set.seed(123)
+tiempos <- rnorm(28,33,4.2)
+t.test(tiempos, conf.level = 0.96)
+
+```
+
+### Intervalo de confianza para una proporción
+
+Se desea estimar el porcentaje de deserciones escolares en un año escolar en el departamento de Apurimac a un nivel de confianza de 95%. El año anterior, de una muestra piloto de 120 estudiantes se encontró que 10 estudiantes habían desertado.
+
+```{r I_C_propor, include=TRUE, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, results='markup'}
+
+# Datos
+a <- 10       # Número de éxitos
+n <- 120      # Tamaño de la muestra
+nivel_confianza <- 0.95
+
+# Proporción muestral
+p_hat <- a / n
+
+# Valor crítico de z
+z_critico <- qnorm((1 + nivel_confianza) / 2)
+
+# Error estándar
+error_estandar <- sqrt((p_hat * (1 - p_hat)) / n)
+
+# Intervalo de confianza
+limite_inferior <- p_hat - z_critico * error_estandar
+limite_superior <- p_hat + z_critico * error_estandar
+
+# Mostrar resultados
+cat("Intervalo de confianza del 95% para la proporción:", 
+    limite_inferior, "a", limite_superior, "\n")
+
+```
+
+
+
+
